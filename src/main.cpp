@@ -3,6 +3,7 @@
 #include <Adafruit_BMP085.h>
 #include <Adafruit_BMP280.h>
 #include <SPI.h>
+#include <PressureProcessing.h>
 
 Adafruit_BMP085 bmp_i2c;
 Adafruit_BMP280 bmp_spi(5);
@@ -10,84 +11,12 @@ Adafruit_BMP280 bmp_spi(5);
 bool i2c_online = false;
 bool spi_online = false;
 
-struct KalmanFilter {
-  float x; // Pressure Value(current state estimate)
-  float p; // Error Covariance (Estimate Uncertainty)
-  float q; // Noise Covariance (Process Noise Covariance)
-  float r; // Measurement Noise Covariance (Sensor Noise Covariance)
-  float k; // Kalman Gain
-
-  // Default constuructor with default parameters for process noise, sensor noise, and initial estimate error
-  KalmanFilter(float process_noise = 0.01f, float sensor_noise = 0.25f, float init_est_error = 1.0f) {
-    x = NAN;
-    q = process_noise;
-    r = sensor_noise;
-    p = init_est_error;
-    k = 0.0f;
-  }
-
-  float update(float measurement) {
-    // init if it's first read
-    if (isnan(x)) {
-      x = measurement;
-      return x;
-    }
-    // 1. Prediction update
-    p = p + q;
-
-    // 2. Kalman Gain
-    k = p / (p + r);
-
-    // 3. Update with new measurement
-    x = x + k * (measurement - x);
-
-    // 4. Update the error covariance
-    p = (1.0f - k) * p;
-
-    return x;
-  }
-
-  void reset() {
-    x = NAN;
-    p = 1.0f;
-  }
-};
-
 KalmanFilter bmpI2C_kalman(0.01f, 0.25f);
 KalmanFilter bmpSPI_kalman(0.01f, 0.25f);
 
-struct SensorData {
-  float raw_hpa;
-  float filtered_hpa;
-  bool is_valid;
-  const char* status;
-};
-
-SensorData processPressure(KalmanFilter &kf, float raw) {
-  SensorData data = {raw, NAN, false, "ERR_UNKNOWN"};
-
-  if (isnan(raw) || raw <= 0.0f) {
-    data.status = "ERR_DISCONNECTED";
-    return data;
-  }
-
-  // 1. Sensor range (300 ... 1100 hPa)
-  if (raw < 300.0f || raw > 1100.1f) {
-    data.status = "ERR_OUT_OF_RANGE";
-    return data;
-  }
-
-  // 2. Random spikes (> 4 hPa from current filtered value)
-  if (!isnan(kf.x) && fabs(raw - kf.x) > 4.0f) {
-    data.status = "WARN_SPIKE";
-  } else {
-    data.status = "OK";
-  }
-
-  data.filtered_hpa = kf.update(raw);
-  data.is_valid = true;
-  return data;
-}
+#ifdef WOKWI_AUTOTEST
+static void runWokwiTest(const String& command);
+#endif
 
 void setup() {
   Serial.begin(115200);
@@ -109,9 +38,20 @@ void setup() {
   } else {
     Serial.println("BMP280 SPI not found! -> Fallback data generation enabled.");
   }
+#ifdef WOKWI_AUTOTEST
+  Serial.println("WOKWI_AUTOTEST_READY");
+#endif
 }
 
 void loop() {
+#ifdef WOKWI_AUTOTEST
+  while (Serial.available() > 0) {
+    String command = Serial.readStringUntil('\n');
+    command.trim();
+    runWokwiTest(command);
+  }
+#endif
+
   static uint32_t sample_id = 0;
   sample_id++;
 
@@ -157,3 +97,101 @@ void loop() {
 
   delay(200);
 }
+
+#ifdef WOKWI_AUTOTEST
+static void printWokwiResult(const char* name, bool passed) {
+  Serial.printf("WOKWI_TEST %s %s\n", name, passed ? "PASS" : "FAIL");
+}
+
+static bool isNear(float actual, float expected, float tolerance = 0.01f) {
+  return fabs(actual - expected) <= tolerance;
+}
+
+static void runWokwiTest(const String& command) {
+  if (command == "TEST:FIRST") {
+    KalmanFilter filter;
+    SensorData data = processPressure(filter, 1013.25f);
+    printWokwiResult("FIRST_VALID", data.is_valid &&
+                                      strcmp(data.status, "OK") == 0 &&
+                                      isNear(data.filtered_hpa, 1013.25f));
+  } else if (command == "TEST:SMOOTH") {
+    KalmanFilter filter;
+    processPressure(filter, 1000.0f);
+    SensorData data = processPressure(filter, 1002.0f);
+    printWokwiResult("SMOOTHING", data.is_valid &&
+                                      data.filtered_hpa > 1000.0f &&
+                                      data.filtered_hpa < 1002.0f);
+  } else if (command == "TEST:DISCONNECT") {
+    const float values[] = {NAN, 0.0f, -1.0f};
+    bool passed = true;
+    for (float value : values) {
+      KalmanFilter filter;
+      SensorData data = processPressure(filter, value);
+      passed = passed && !data.is_valid &&
+               strcmp(data.status, "ERR_DISCONNECTED") == 0 &&
+               isnan(data.filtered_hpa);
+    }
+    printWokwiResult("DISCONNECTED_VALUES", passed);
+  } else if (command == "TEST:RANGE") {
+    const float values[] = {300.0f, 1100.0f};
+    bool passed = true;
+    for (float value : values) {
+      KalmanFilter filter;
+      SensorData data = processPressure(filter, value);
+      passed = passed && data.is_valid && strcmp(data.status, "OK") == 0;
+    }
+    printWokwiResult("VALID_BOUNDARIES", passed);
+  } else if (command == "TEST:OUT_OF_RANGE") {
+    const float values[] = {299.99f, 1100.03f, 1500.0f};
+    bool passed = true;
+    for (float value : values) {
+      KalmanFilter filter;
+      SensorData data = processPressure(filter, value);
+      passed = passed && !data.is_valid &&
+               strcmp(data.status, "ERR_OUT_OF_RANGE") == 0 &&
+               isnan(data.filtered_hpa);
+    }
+    printWokwiResult("OUT_OF_RANGE", passed);
+  } else if (command == "TEST:SPIKE") {
+    KalmanFilter filter;
+    processPressure(filter, 1000.0f);
+    SensorData data = processPressure(filter, 1004.01f);
+    printWokwiResult("SPIKE_WARNING", data.is_valid &&
+                                      strcmp(data.status, "WARN_SPIKE") == 0 &&
+                                      data.filtered_hpa > 1000.0f &&
+                                      data.filtered_hpa < 1004.01f);
+  } else if (command == "TEST:THRESHOLD") {
+    KalmanFilter filter;
+    processPressure(filter, 1000.0f);
+    SensorData data = processPressure(filter, 1004.0f);
+    printWokwiResult("SPIKE_THRESHOLD", data.is_valid &&
+                                      strcmp(data.status, "OK") == 0);
+  } else if (command == "TEST:PRESERVE") {
+    KalmanFilter filter;
+    processPressure(filter, 1000.0f);
+    const float previous = filter.x;
+    SensorData data = processPressure(filter, NAN);
+    printWokwiResult("INVALID_PRESERVES_STATE", !data.is_valid &&
+                                      isNear(filter.x, previous));
+  } else if (command == "TEST:RECOVER") {
+    KalmanFilter filter;
+    processPressure(filter, 1000.0f);
+    SensorData disconnected = processPressure(filter, NAN);
+    SensorData recovered = processPressure(filter, 1001.0f);
+    printWokwiResult("DISCONNECT_RECOVERY", !disconnected.is_valid &&
+                                      recovered.is_valid &&
+                                      strcmp(recovered.status, "OK") == 0 &&
+                                      recovered.filtered_hpa > 1000.0f &&
+                                      recovered.filtered_hpa < 1001.0f);
+  } else if (command == "TEST:RESET") {
+    KalmanFilter filter;
+    processPressure(filter, 1000.0f);
+    processPressure(filter, 1005.0f);
+    filter.reset();
+    SensorData data = processPressure(filter, 900.0f);
+    printWokwiResult("FILTER_RESET", data.is_valid &&
+                                      strcmp(data.status, "OK") == 0 &&
+                                      isNear(data.filtered_hpa, 900.0f));
+  }
+}
+#endif

@@ -1,11 +1,55 @@
+# Pressure sensor tests
 
-This directory is intended for PlatformIO Test Runner and project tests.
+## PlatformIO native tests
 
-Unit Testing is a software testing method by which individual units of
-source code, sets of one or more MCU program modules together with associated
-control data, usage procedures, and operating procedures, are tested to
-determine whether they are fit for use. Unit testing finds problems early
-in the development cycle.
+The native suite exercises the deterministic pressure-processing logic without
+hardware:
 
-More information about PlatformIO Unit Testing:
-- https://docs.platformio.org/en/latest/advanced/unit-testing/index.html
+```powershell
+& C:\Users\<user>\.platformio\penv\Scripts\platformio.exe test -e native
+```
+
+It covers sensor disconnect values, range limits, Kalman initialization and
+smoothing, spike detection, filter reset, and a disconnect/recovery sequence.
+
+## ESP32 build
+
+Build the production firmware:
+
+```powershell
+& C:\Users\<user>\.platformio\penv\Scripts\platformio.exe run -e esp32dev
+```
+
+Build the Wokwi-only firmware with the serial processing-test harness:
+
+```powershell
+& C:\Users\<user>\.platformio\penv\Scripts\platformio.exe run -e wokwi
+```
+
+## Wokwi automation scenario
+
+Install the Wokwi CLI and authenticate it according to the official
+documentation. From the repository root, build first and then run:
+
+```powershell
+platformio run -e wokwi
+wokwi-cli --scenario wokwi.scenario.yaml
+```
+
+The `wokwi` PlatformIO environment enables `WOKWI_AUTOTEST` only for the
+simulation firmware. The scenario in [`wokwi.scenario.yaml`](../wokwi.scenario.yaml) checks startup
+and drives the same pressure-processing cases as the native suite through a
+compile-time serial test harness: first reading, smoothing, disconnected
+values, valid and invalid range boundaries, spike detection, threshold
+behavior, state preservation, disconnect/recovery, and filter reset. It also
+checks that the normal fallback loop continues to produce a spike warning.
+
+The current Wokwi diagram does not provide an API to physically unplug the
+BMP180 during this run. The native sequence test covers a reading becoming
+disconnected and then recovering without corrupting the filter state.
+
+References:
+
+- [PlatformIO unit testing](https://docs.platformio.org/en/latest/advanced/unit-testing/index.html)
+- [PlatformIO GitHub Actions integration](https://docs.platformio.org/en/latest/integration/ci/github-actions.html)
+- [Wokwi automation scenarios](https://docs.wokwi.com/wokwi-ci/automation-scenarios)

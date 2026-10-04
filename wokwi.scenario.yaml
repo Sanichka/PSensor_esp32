@@ -1,0 +1,28 @@
+version: 1
+author: PSensor_esp32
+name: pressure-sensor-processing-tests
+steps:
+  - wait-serial: "BMP180 I2C online!"
+  - wait-serial: "BMP280 SPI not found!"
+  - wait-serial: "WOKWI_AUTOTEST_READY"
+  - write-serial: "TEST:FIRST\n"
+  - wait-serial: "WOKWI_TEST FIRST_VALID PASS"
+  - write-serial: "TEST:SMOOTH\n"
+  - wait-serial: "WOKWI_TEST SMOOTHING PASS"
+  - write-serial: "TEST:DISCONNECT\n"
+  - wait-serial: "WOKWI_TEST DISCONNECTED_VALUES PASS"
+  - write-serial: "TEST:RANGE\n"
+  - wait-serial: "WOKWI_TEST VALID_BOUNDARIES PASS"
+  - write-serial: "TEST:OUT_OF_RANGE\n"
+  - wait-serial: "WOKWI_TEST OUT_OF_RANGE PASS"
+  - write-serial: "TEST:SPIKE\n"
+  - wait-serial: "WOKWI_TEST SPIKE_WARNING PASS"
+  - write-serial: "TEST:THRESHOLD\n"
+  - wait-serial: "WOKWI_TEST SPIKE_THRESHOLD PASS"
+  - write-serial: "TEST:PRESERVE\n"
+  - wait-serial: "WOKWI_TEST INVALID_PRESERVES_STATE PASS"
+  - write-serial: "TEST:RECOVER\n"
+  - wait-serial: "WOKWI_TEST DISCONNECT_RECOVERY PASS"
+  - write-serial: "TEST:RESET\n"
+  - wait-serial: "WOKWI_TEST FILTER_RESET PASS"
+  - wait-serial: "WARN_SPIKE"
