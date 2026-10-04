@@ -1,8 +1,14 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_BMP085.h>
+#include <Adafruit_BMP280.h>
+#include <SPI.h>
 
-Adafruit_BMP085 bmp;
+Adafruit_BMP085 bmp_i2c;
+Adafruit_BMP280 bmp_spi(5);
+
+bool i2c_online = false;
+bool spi_online = false;
 
 struct KalmanFilter {
   float x; // Pressure Value(current state estimate)
@@ -47,37 +53,107 @@ struct KalmanFilter {
   }
 };
 
-KalmanFilter bmp_kalman(0.01f, 0.25f);
+KalmanFilter bmpI2C_kalman(0.01f, 0.25f);
+KalmanFilter bmpSPI_kalman(0.01f, 0.25f);
 
-// put function declarations here:
-int myFunction(int, int);
+struct SensorData {
+  float raw_hpa;
+  float filtered_hpa;
+  bool is_valid;
+  const char* status;
+};
+
+SensorData processPressure(KalmanFilter &kf, float raw) {
+  SensorData data = {raw, NAN, false, "ERR_UNKNOWN"};
+
+  if (isnan(raw) || raw <= 0.0f) {
+    data.status = "ERR_DISCONNECTED";
+    return data;
+  }
+
+  // 1. Sensor range (300 ... 1100 hPa)
+  if (raw < 300.0f || raw > 1100.1f) {
+    data.status = "ERR_OUT_OF_RANGE";
+    return data;
+  }
+
+  // 2. Random spikes (> 4 hPa from current filtered value)
+  if (!isnan(kf.x) && fabs(raw - kf.x) > 4.0f) {
+    data.status = "WARN_SPIKE";
+  } else {
+    data.status = "OK";
+  }
+
+  data.filtered_hpa = kf.update(raw);
+  data.is_valid = true;
+  return data;
+}
 
 void setup() {
   Serial.begin(115200);
   Serial.println("SETUP...");
 
   Wire.begin(21, 22);
+  SPI.begin(18, 19, 23, 5);
 
-  if (!bmp.begin()) {
-    Serial.println("BMP180 not found!");
-    while (1) {
-      delay(500);
-    }
+  if (bmp_i2c.begin()) {
+    i2c_online = true;
+    Serial.println("BMP180 I2C online!");
+  } else {
+    Serial.println("BMP180 I2C not found!");
   }
 
-  Serial.println("BMP180 found!");
+  if (bmp_spi.begin()) {
+    spi_online = true;
+    Serial.println("BMP280 SPI online!");
+  } else {
+    Serial.println("BMP280 SPI not found! -> Fallback data generation enabled.");
+  }
 }
 
 void loop() {
-  int32_t pressure = bmp.readPressure();
-  float raw_hpa = pressure / 100.0f; // hectopascal measurement
+  static uint32_t sample_id = 0;
+  sample_id++;
 
-  float filtered_hpa = bmp_kalman.update(raw_hpa);
-  Serial.printf("Raw: %.2f hPa | Filtered KF: %.2f hPa\r\n", raw_hpa, filtered_hpa);
+  // Get I2C pressure reading
+  float raw_i2c = NAN;
+  if (i2c_online) {
+    raw_i2c = bmp_i2c.readPressure() / 100.0f; // Pa -> hPa
+  }
+  SensorData data_i2c = processPressure(bmpI2C_kalman, raw_i2c);
+
+  // Get SPI pressure reading
+  float raw_spi = NAN;
+  if (spi_online) {
+    raw_spi = bmp_spi.readPressure() / 100.0f;
+  } else {
+    // Data generation for testing only
+    float base = (!isnan(raw_i2c)) ? raw_i2c : 1013.25f;
+    float noise = ((rand() % 100) - 50) / 100.0f; // noise +-0.5 hPa
+    raw_spi = base + 0.2f + noise;
+
+    // spikes every 10th sample
+    if (sample_id % 10 == 0) {
+      raw_spi += 7.0f;
+    }
+  }
+  SensorData data_spi = processPressure(bmpSPI_kalman, raw_spi);
+
+  // Outptut results
+  Serial.printf("\n#%-4u | ", sample_id);
+  Serial.printf("I2C: Raw=%6.2f hPa, KF=%6.2f hPa [%-16s] | ", 
+                data_i2c.raw_hpa, data_i2c.filtered_hpa, data_i2c.status);
+  Serial.printf("SPI: Raw=%6.2f hPa, KF=%6.2f hPa [%-16s]", 
+                data_spi.raw_hpa, data_spi.filtered_hpa, data_spi.status);
+
+  // Cross validation between I2C and SPI readings
+  if (data_i2c.is_valid && data_spi.is_valid) {
+    float delta = fabs(data_i2c.filtered_hpa - data_spi.filtered_hpa);
+    if (delta > 3.0f) {
+      Serial.printf(" -> [DISCREPANCY WARN: Delta=%.2f hPa!]", delta);
+    }
+  }
+  Serial.println();
+
   delay(200);
-}
-
-// put function definitions here:
-int myFunction(int x, int y) {
-  return x + y;
 }
