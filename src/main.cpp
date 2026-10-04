@@ -35,6 +35,13 @@ void setup() {
   if (bmp_spi.begin()) {
     spi_online = true;
     Serial.println("BMP280 SPI online!");
+    bmp_spi.setSampling(
+      Adafruit_BMP280::MODE_NORMAL,     // Режим роботи: постійне вимірювання (Normal mode)
+      Adafruit_BMP280::SAMPLING_X2,     // Oversampling температури (x2 достатньо для компенсації)
+      Adafruit_BMP280::SAMPLING_X8,     // Oversampling тиску (x8 дає високу точність та низький шум)
+      Adafruit_BMP280::FILTER_X4,       // Коефіцієнт вбудованого IIR фільтра (X4 ідеально для дронів!)
+      Adafruit_BMP280::STANDBY_MS_1     // Мінімальна затримка між вимірами (0.5 або 1 мс для високої частоти)
+    );
   } else {
     Serial.println("BMP280 SPI not found! -> Fallback data generation enabled.");
   }
