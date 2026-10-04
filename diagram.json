@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "author": "Oleksandr Koval",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+    {
+      "type": "wokwi-bmp180",
+      "id": "bmp1",
+      "top": -131.734375,
+      "left": -250.83333333333331,
+      "attrs": {}
+    },
+    { "type": "board-bmp180", "id": "bmp2", "top": 42.42, "left": 142.94, "attrs": {} }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    [ "bmp2:SCL", "esp:22", "green", [ "h20.52", "v-35.84", "h-115.2", "v19.2" ] ],
+    [ "esp:21", "bmp2:SDA", "green", [ "h24.04", "v28.8", "h96", "v-28.8" ] ],
+    [ "esp:3V3", "bmp2:3.3V", "red", [ "h-14.21", "v-38.4", "h240", "v96", "h9.6" ] ],
+    [ "bmp2:GND", "esp:GND.2", "black", [ "h10.92", "v-35.84", "h-67.2" ] ]
+  ],
+  "dependencies": {}
+}
