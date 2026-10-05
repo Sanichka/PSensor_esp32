@@ -35,6 +35,13 @@ void setup() {
   if (bmp_spi.begin()) {
     spi_online = true;
     Serial.println("BMP280 SPI online!");
+    bmp_spi.setSampling(
+      Adafruit_BMP280::MODE_NORMAL,     // Default mode (normal measurement)
+      Adafruit_BMP280::SAMPLING_X2,     // Temprature oversampling 
+      Adafruit_BMP280::SAMPLING_X8,     // Pressure Oversampling (x8 is ideal for drones theorically)
+      Adafruit_BMP280::FILTER_X4,       // Built in IIR filter (X4)
+      Adafruit_BMP280::STANDBY_MS_1     // Delay between measurements (1ms)
+    );
   } else {
     Serial.println("BMP280 SPI not found! -> Fallback data generation enabled.");
   }
