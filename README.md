@@ -71,6 +71,108 @@ wokwi.scenario.yaml
 Wokwi test harness. This keeps validation and filtering behavior consistent
 across all test environments.
 
+## Filter benchmark
+
+The modular filter implementations and empirical benchmark live on the
+separate [`benchmark` branch](https://github.com/Sanichka/PSensor_esp32/tree/benchmark).
+That branch adds SMA, median, EMA, Kalman, complementary-fusion, and notch
+filters behind a common interface, then runs the same deterministic synthetic
+dataset through each filter at startup.
+
+The benchmark reports:
+
+- **RAM**: static `sizeof(filter)` for one filter instance
+- **Average / Peak**: average and worst-case `update()` latency in microseconds
+- **Heap**: whether the update path uses dynamic allocation
+- **Sigma**: standard deviation of the filtered 100-sample noisy signal
+- **Spike**: output deviation from baseline after a simulated `+15 hPa` impulse
+- **90% lag**: update iterations needed to reach 90% of a simulated `+10 hPa`
+  step; at 100 Hz, one iteration is approximately 10 ms
+
+The benchmark output is intentionally printed as one filter per block so it
+remains readable in narrow serial terminals. Expand the captured run below to
+review the results:
+
+<details>
+<summary>Expand benchmark results</summary>
+
+```text
+================================
+         FILTER BENCHMARK
+================================
+Samples : 100
+Baseline: 1000.00 hPa
+Step    : +10.00 hPa
+
+[SMA]
+  Execution
+    RAM      : 60 bytes
+    Average  : 13.58 us/update
+    Peak     : 35.00 us/update
+    Heap     : none
+  Signal quality
+    Sigma    : 0.0377 hPa
+    Spike    : 3.000 hPa
+    90% lag  : 5 samples
+
+[Median]
+  Execution
+    RAM      : 56 bytes
+    Average  : 25.19 us/update
+    Peak     : 48.00 us/update
+    Heap     : none
+  Signal quality
+    Sigma    : 0.0525 hPa
+    Spike    : 0.000 hPa
+    90% lag  : 3 samples
+
+[EMA]
+  Execution
+    RAM      : 16 bytes
+    Average  : 9.29 us/update
+    Peak     : 44.00 us/update
+    Heap     : none
+  Signal quality
+    Sigma    : 0.0389 hPa
+    Spike    : 2.250 hPa
+    90% lag  : 15 samples
+
+[Kalman]
+  Execution
+    RAM      : 28 bytes
+    Average  : 14.50 us/update
+    Peak     : 52.00 us/update
+    Heap     : none
+  Signal quality
+    Sigma    : 0.0302 hPa
+    Spike    : 12.024 hPa
+    90% lag  : 3 samples
+
+[Complementary]
+  Execution
+    RAM      : 28 bytes
+    Average  : 10.23 us/update
+    Peak     : 32.00 us/update
+    Heap     : none
+  Signal quality
+    Sigma    : 0.1184 hPa
+    Spike    : 14.700 hPa
+    90% lag  : 1 samples
+
+[Notch]
+  Execution
+    RAM      : 36 bytes
+    Average  : 27.18 us/update
+    Peak     : 52.00 us/update
+    Heap     : none
+  Signal quality
+    Sigma    : 0.1213 hPa
+    Spike    : 14.348 hPa
+    90% lag  : 1 samples
+```
+
+</details>
+
 ## Dependencies
 
 Dependencies are declared in [platformio.ini](platformio.ini):
