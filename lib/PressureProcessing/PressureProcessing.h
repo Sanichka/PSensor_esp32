@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include "../../include/filters/IFilter.h"
 
 struct KalmanFilter {
   float x;
@@ -24,3 +25,4 @@ struct SensorData {
 };
 
 SensorData processPressure(KalmanFilter& kf, float raw);
+SensorData processPressure(IFilter& filter, float raw);

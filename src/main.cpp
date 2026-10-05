@@ -4,6 +4,13 @@
 #include <Adafruit_BMP280.h>
 #include <SPI.h>
 #include <PressureProcessing.h>
+#include <BenchmarkRunner.h>
+#include <filters/ComplementaryFusion.h>
+#include <filters/EMAFilter.h>
+#include <filters/KalmanFilter.h>
+#include <filters/MedianFilter.h>
+#include <filters/NotchFilter.h>
+#include <filters/SMAFilter.h>
 
 Adafruit_BMP085 bmp_i2c;
 Adafruit_BMP280 bmp_spi(5);
@@ -11,8 +18,25 @@ Adafruit_BMP280 bmp_spi(5);
 bool i2c_online = false;
 bool spi_online = false;
 
-KalmanFilter bmpI2C_kalman(0.01f, 0.25f);
-KalmanFilter bmpSPI_kalman(0.01f, 0.25f);
+filters::KalmanFilter bmpI2C_filter(0.01f, 0.25f);
+filters::KalmanFilter bmpSPI_filter(0.01f, 0.25f);
+
+static void runFilterBenchmark() {
+  filters::SMAFilter<10> sma(5);
+  filters::MedianFilter<10> median(5);
+  filters::EMAFilter ema(0.15f);
+  filters::KalmanFilter kalman(0.01f, 0.25f);
+  filters::ComplementaryFusion complementary;
+  filters::NotchFilter notch(100.0f, 10.0f);
+  IFilter* benchmark_filters[] = {&sma, &median, &ema, &kalman,
+                                  &complementary, &notch};
+  const size_t object_sizes[] = {
+      sizeof(sma), sizeof(median), sizeof(ema), sizeof(kalman),
+      sizeof(complementary), sizeof(notch)};
+  FilterBenchmark::printMarkdown(benchmark_filters, object_sizes,
+                                 sizeof(benchmark_filters) /
+                                     sizeof(benchmark_filters[0]));
+}
 
 #ifdef WOKWI_AUTOTEST
 static void runWokwiTest(const String& command);
@@ -21,6 +45,7 @@ static void runWokwiTest(const String& command);
 void setup() {
   Serial.begin(115200);
   Serial.println("SETUP...");
+  runFilterBenchmark();
 
   Wire.begin(21, 22);
   SPI.begin(18, 19, 23, 5);
@@ -67,7 +92,7 @@ void loop() {
   if (i2c_online) {
     raw_i2c = bmp_i2c.readPressure() / 100.0f; // Pa -> hPa
   }
-  SensorData data_i2c = processPressure(bmpI2C_kalman, raw_i2c);
+  SensorData data_i2c = processPressure(bmpI2C_filter, raw_i2c);
 
   // Get SPI pressure reading
   float raw_spi = NAN;
@@ -84,7 +109,7 @@ void loop() {
       raw_spi += 7.0f;
     }
   }
-  SensorData data_spi = processPressure(bmpSPI_kalman, raw_spi);
+  SensorData data_spi = processPressure(bmpSPI_filter, raw_spi);
 
   // Outptut results
   Serial.printf("\n#%-4u | ", sample_id);
